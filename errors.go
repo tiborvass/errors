@@ -93,6 +93,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"io"
 )
@@ -100,56 +101,50 @@ import (
 // New returns an error with the supplied message.
 // New also records the stack trace at the point it was called.
 func New(message string) error {
-	return &fundamental{
-		msg:   message,
-		stack: callers(),
-	}
+	return formatted{withStack{
+		error: errors.New(message),
+		stack: callers(0),
+	}}
 }
 
 // Errorf formats according to a format specifier and returns the string
 // as a value that satisfies error.
 // Errorf also records the stack trace at the point it was called.
 func Errorf(format string, args ...interface{}) error {
-	return &fundamental{
-		msg:   fmt.Sprintf(format, args...),
-		stack: callers(),
-	}
+	return formatted{withStack{
+		error: fmt.Errorf(format, args...),
+		stack: callers(0),
+	}}
 }
 
-// fundamental is an error that has a message and a stack, but no caller.
-type fundamental struct {
-	msg string
-	*stack
-}
-
-func (f *fundamental) Error() string { return f.msg }
-
-func (f *fundamental) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			io.WriteString(s, f.msg)
-			f.stack.Format(s, verb)
-			return
-		}
-		fallthrough
-	case 's':
-		io.WriteString(s, f.msg)
-	case 'q':
-		fmt.Fprintf(s, "%q", f.msg)
-	}
-}
-
-// WithStack annotates err with a stack trace at the point WithStack was called.
-// If err is nil, WithStack returns nil.
+// WithStack is an alias for EnsureStack. Deprecated.
 func WithStack(err error) error {
+	return ensureStack(err)
+}
+
+// EnsureStack ensures err is annotated with a stack trace. In case it is not,
+// it is annotated with a stack trace at the point EnsureStack was called.
+// In case it already had a stack trace, err is returned as is.
+// If err is nil, EnsureStack returns nil.
+func EnsureStack(err error) error {
+	return ensureStack(err)
+}
+
+func ensureStack(err error) error {
 	if err == nil {
 		return nil
 	}
-	return &withStack{
-		err,
-		callers(),
+	var st interface {
+		error
+		StackTrace() StackTrace
 	}
+	if As(err, &st) {
+		return formatted{err}
+	}
+	return formatted{withStack{
+		err,
+		callers(1),
+	}}
 }
 
 type withStack struct {
@@ -157,26 +152,10 @@ type withStack struct {
 	*stack
 }
 
-func (w *withStack) Cause() error { return w.error }
+func (w withStack) Cause() error { return w.error }
 
 // Unwrap provides compatibility for Go 1.13 error chains.
-func (w *withStack) Unwrap() error { return w.error }
-
-func (w *withStack) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			fmt.Fprintf(s, "%+v", w.Cause())
-			w.stack.Format(s, verb)
-			return
-		}
-		fallthrough
-	case 's':
-		io.WriteString(s, w.Error())
-	case 'q':
-		fmt.Fprintf(s, "%q", w.Error())
-	}
-}
+func (w withStack) Unwrap() error { return w.error }
 
 // Wrap returns an error annotating err with a stack trace
 // at the point Wrap is called, and the supplied message.
@@ -185,14 +164,7 @@ func Wrap(err error, message string) error {
 	if err == nil {
 		return nil
 	}
-	err = &withMessage{
-		cause: err,
-		msg:   message,
-	}
-	return &withStack{
-		err,
-		callers(),
-	}
+	return formatted{fmt.Errorf("%s: %w", message, ensureStack(err))}
 }
 
 // Wrapf returns an error annotating err with a stack trace
@@ -202,13 +174,36 @@ func Wrapf(err error, format string, args ...interface{}) error {
 	if err == nil {
 		return nil
 	}
-	err = &withMessage{
-		cause: err,
-		msg:   fmt.Sprintf(format, args...),
-	}
-	return &withStack{
-		err,
-		callers(),
+	return formatted{fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), ensureStack(err))}
+}
+
+type formatted struct {
+	error
+}
+
+func (f formatted) Cause() error { return f.error }
+
+func (f formatted) Unwrap() error { return f.error }
+
+func (f formatted) Format(s fmt.State, verb rune) {
+	switch verb {
+	case 'v':
+		if s.Flag('+') {
+			io.WriteString(s, f.error.Error())
+			var st interface {
+				Format(fmt.State, rune)
+				StackTrace() StackTrace
+			}
+			if As(f.error, &st) {
+				st.Format(s, verb)
+			}
+			return
+		}
+		fallthrough
+	case 's':
+		io.WriteString(s, f.error.Error())
+	case 'q':
+		fmt.Fprintf(s, "%q", f.error.Error())
 	}
 }
 
@@ -218,10 +213,7 @@ func WithMessage(err error, message string) error {
 	if err == nil {
 		return nil
 	}
-	return &withMessage{
-		cause: err,
-		msg:   message,
-	}
+	return fmt.Errorf("%s: %w", message, err)
 }
 
 // WithMessagef annotates err with the format specifier.
@@ -230,59 +222,24 @@ func WithMessagef(err error, format string, args ...interface{}) error {
 	if err == nil {
 		return nil
 	}
-	return &withMessage{
-		cause: err,
-		msg:   fmt.Sprintf(format, args...),
-	}
+	return fmt.Errorf("%s: %w", fmt.Sprintf(format, args...), err)
 }
 
-type withMessage struct {
-	cause error
-	msg   string
-}
-
-func (w *withMessage) Error() string { return w.msg + ": " + w.cause.Error() }
-func (w *withMessage) Cause() error  { return w.cause }
-
-// Unwrap provides compatibility for Go 1.13 error chains.
-func (w *withMessage) Unwrap() error { return w.cause }
-
-func (w *withMessage) Format(s fmt.State, verb rune) {
-	switch verb {
-	case 'v':
-		if s.Flag('+') {
-			fmt.Fprintf(s, "%+v\n", w.Cause())
-			io.WriteString(s, w.msg)
-			return
-		}
-		fallthrough
-	case 's', 'q':
-		io.WriteString(s, w.Error())
-	}
-}
-
-// Cause returns the underlying cause of the error, if possible.
-// An error value has a cause if it implements the following
-// interface:
-//
-//     type causer interface {
-//            Cause() error
-//     }
-//
-// If the error does not implement Cause, the original error will
-// be returned. If the error is nil, nil will be returned without further
-// investigation.
+// Cause calls Unwrap on err repeatedly, until the error has a StackTrace()
+// or does not implement Unwrap.
 func Cause(err error) error {
-	type causer interface {
-		Cause() error
-	}
-
-	for err != nil {
-		cause, ok := err.(causer)
-		if !ok {
-			break
+	for {
+		var st interface {
+			error
+			StackTrace() StackTrace
 		}
-		err = cause.Cause()
+		if As(err, &st) {
+			return st
+		}
+		e := Unwrap(err)
+		if e == nil {
+			return err
+		}
+		err = e
 	}
-	return err
 }

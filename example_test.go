@@ -103,15 +103,6 @@ func fn() error {
 	return errors.Wrap(e3, "outer")
 }
 
-func ExampleCause() {
-	err := fn()
-	fmt.Println(err)
-	fmt.Println(errors.Cause(err))
-
-	// Output: outer: middle: inner: error
-	// error
-}
-
 func ExampleWrap_extended() {
 	err := fn()
 	fmt.Printf("%+v\n", err)
@@ -120,7 +111,7 @@ func ExampleWrap_extended() {
 	// error
 	// github.com/pkg/errors_test.fn
 	//         /home/dfc/src/github.com/pkg/errors/example_test.go:47
-	// github.com/pkg/errors_test.ExampleCause_printf
+	// github.com/pkg/errors_test.ExampleWrap_printf
 	//         /home/dfc/src/github.com/pkg/errors/example_test.go:63
 	// testing.runExample
 	//         /home/dfc/go/src/testing/example.go:114
@@ -192,7 +183,7 @@ func Example_stackTrace() {
 	//	/home/dfc/src/github.com/pkg/errors/example_test.go:127
 }
 
-func ExampleCause_printf() {
+func ExampleWrap_printf() {
 	err := errors.Wrap(func() error {
 		return func() error {
 			return errors.New("hello world")
