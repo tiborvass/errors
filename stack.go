@@ -14,35 +14,35 @@ import (
 // its value represents the program counter + 1.
 type Frame uintptr
 
-// pc returns the program counter for this frame;
+// PC returns the program counter for this frame;
 // multiple frames may have the same PC value.
-func (f Frame) pc() uintptr { return uintptr(f) - 1 }
+func (f Frame) PC() uintptr { return uintptr(f) - 1 }
 
-// file returns the full path to the file that contains the
+// File returns the full path to the file that contains the
 // function for this Frame's pc.
-func (f Frame) file() string {
-	fn := runtime.FuncForPC(f.pc())
+func (f Frame) File() string {
+	fn := runtime.FuncForPC(f.PC())
 	if fn == nil {
 		return "unknown"
 	}
-	file, _ := fn.FileLine(f.pc())
+	file, _ := fn.FileLine(f.PC())
 	return file
 }
 
-// line returns the line number of source code of the
+// Line returns the line number of source code of the
 // function for this Frame's pc.
-func (f Frame) line() int {
-	fn := runtime.FuncForPC(f.pc())
+func (f Frame) Line() int {
+	fn := runtime.FuncForPC(f.PC())
 	if fn == nil {
 		return 0
 	}
-	_, line := fn.FileLine(f.pc())
+	_, line := fn.FileLine(f.PC())
 	return line
 }
 
-// name returns the name of this function, if known.
-func (f Frame) name() string {
-	fn := runtime.FuncForPC(f.pc())
+// Name returns the name of this function, if known.
+func (f Frame) Name() string {
+	fn := runtime.FuncForPC(f.PC())
 	if fn == nil {
 		return "unknown"
 	}
@@ -66,16 +66,16 @@ func (f Frame) Format(s fmt.State, verb rune) {
 	case 's':
 		switch {
 		case s.Flag('+'):
-			io.WriteString(s, f.name())
+			io.WriteString(s, f.Name())
 			io.WriteString(s, "\n\t")
-			io.WriteString(s, f.file())
+			io.WriteString(s, f.File())
 		default:
-			io.WriteString(s, path.Base(f.file()))
+			io.WriteString(s, path.Base(f.File()))
 		}
 	case 'd':
-		io.WriteString(s, strconv.Itoa(f.line()))
+		io.WriteString(s, strconv.Itoa(f.Line()))
 	case 'n':
-		io.WriteString(s, funcname(f.name()))
+		io.WriteString(s, funcname(f.Name()))
 	case 'v':
 		f.Format(s, 's')
 		io.WriteString(s, ":")
@@ -86,11 +86,11 @@ func (f Frame) Format(s fmt.State, verb rune) {
 // MarshalText formats a stacktrace Frame as a text string. The output is the
 // same as that of fmt.Sprintf("%+v", f), but without newlines or tabs.
 func (f Frame) MarshalText() ([]byte, error) {
-	name := f.name()
+	name := f.Name()
 	if name == "unknown" {
 		return []byte(name), nil
 	}
-	return []byte(fmt.Sprintf("%s %s:%d", name, f.file(), f.line())), nil
+	return []byte(fmt.Sprintf("%s %s:%d", name, f.File(), f.Line())), nil
 }
 
 // StackTrace is stack of Frames from innermost (newest) to outermost (oldest).
