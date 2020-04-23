@@ -139,6 +139,10 @@ func (st StackTrace) formatSlice(s fmt.State, verb rune) {
 // stack represents a stack of program counters.
 type stack []uintptr
 
+func (s *stack) stackFormatter() fmt.Formatter {
+	return s
+}
+
 func (s *stack) Format(st fmt.State, verb rune) {
 	switch verb {
 	case 'v':

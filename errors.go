@@ -162,11 +162,31 @@ func (w *withStack) Cause() error { return w.error }
 // Unwrap provides compatibility for Go 1.13 error chains.
 func (w *withStack) Unwrap() error { return w.error }
 
+func format(err error, s fmt.State, verb rune) {
+	if f, ok := err.(fmt.Formatter); ok {
+		f.Format(s, verb)
+		return
+	}
+	if st, ok := err.(interface {
+		stackFormatter() fmt.Formatter
+	}); ok {
+		st.stackFormatter().Format(s, verb)
+		return
+	}
+	if wrapped, ok := err.(interface {
+		Unwrap() error
+	}); ok {
+		format(wrapped.Unwrap(), s, verb)
+		s.Write([]byte{'\n'})
+	}
+	io.WriteString(s, err.Error())
+}
+
 func (w *withStack) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 'v':
 		if s.Flag('+') {
-			fmt.Fprintf(s, "%+v", w.Cause())
+			format(w.error, s, verb)
 			w.stack.Format(s, verb)
 			return
 		}
@@ -251,7 +271,8 @@ func (w *withMessage) Format(s fmt.State, verb rune) {
 	switch verb {
 	case 'v':
 		if s.Flag('+') {
-			fmt.Fprintf(s, "%+v\n", w.Cause())
+			format(w.cause, s, verb)
+			s.Write([]byte{'\n'})
 			io.WriteString(s, w.msg)
 			return
 		}
